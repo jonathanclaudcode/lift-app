@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Kanban,
   Bot,
+  Settings,
   LogOut,
 } from 'lucide-react'
 
@@ -16,6 +17,7 @@ const navItems = [
   { label: 'Konversationer', href: '/conversations', icon: MessageSquare },
   { label: 'Pipeline', href: '/pipeline', icon: Kanban },
   { label: 'AI Assistent', href: '/assistant', icon: Bot },
+  { label: 'Inställningar', href: '/settings', icon: Settings },
 ]
 
 export function Sidebar({ clinicName }: { clinicName: string }) {
