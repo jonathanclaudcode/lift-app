@@ -148,10 +148,11 @@ export default function MessageThread({
   return (
     <div className="flex flex-col h-full">
       {/* Message list */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden min-h-0">
         <Virtuoso
           ref={virtuosoRef}
           data={messages}
+          alignToBottom
           followOutput="smooth"
           initialTopMostItemIndex={Math.max(0, messages.length - 1)}
           className="px-4 py-2"
