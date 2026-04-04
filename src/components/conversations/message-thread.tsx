@@ -45,15 +45,29 @@ export default function MessageThread({
   const lastMessage = messages.at(-1)
   const lastInboundMessage = messages.filter((m) => m.direction === 'inbound').at(-1)
   const lastInboundMessageId = lastInboundMessage?.id
-  const shouldShowSuggestions = lastMessage?.direction === 'inbound'
+  const shouldFetchSuggestions = lastMessage?.direction === 'inbound'
+
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
+
+  // Reset dismissed state when a new inbound message triggers suggestions
+  const prevTriggerIdRef = useRef(lastInboundMessageId)
+  useEffect(() => {
+    if (lastInboundMessageId && lastInboundMessageId !== prevTriggerIdRef.current) {
+      prevTriggerIdRef.current = lastInboundMessageId
+      setSuggestionsDismissed(false)
+    }
+  }, [lastInboundMessageId])
 
   const {
     data: aiData,
     isLoading: aiLoading,
     isError: aiError,
-  } = useAiSuggestions(conversationId, clinicId, lastInboundMessageId, shouldShowSuggestions)
+  } = useAiSuggestions(conversationId, clinicId, lastInboundMessageId, shouldFetchSuggestions)
+
+  const showSuggestions = shouldFetchSuggestions && !suggestionsDismissed && !inputValue.trim()
 
   function handleSelectSuggestion(text: string, index: number) {
+    setSuggestionsDismissed(true)
     setInputValue(text)
     textareaRef.current?.focus()
 
@@ -74,6 +88,7 @@ export default function MessageThread({
 
     setInputValue('')
     setIsSending(true)
+    setSuggestionsDismissed(true)
 
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
@@ -183,7 +198,7 @@ export default function MessageThread({
       </div>
 
       {/* AI suggestion chips */}
-      {shouldShowSuggestions && aiLoading && (
+      {showSuggestions && aiLoading && (
         <div className="flex flex-col gap-2 px-4 py-2 border-t bg-muted/30">
           {[1, 2, 3].map((i) => (
             <div
@@ -195,7 +210,7 @@ export default function MessageThread({
         </div>
       )}
 
-      {shouldShowSuggestions && aiData?.suggestions && aiData.suggestions.length > 0 && (
+      {showSuggestions && aiData?.suggestions && aiData.suggestions.length > 0 && (
         <div className="flex flex-col gap-2 px-4 py-2 border-t bg-muted/30">
           {aiData.suggestions.map((suggestion, index) => (
             <button
@@ -209,7 +224,7 @@ export default function MessageThread({
         </div>
       )}
 
-      {shouldShowSuggestions && aiError && (
+      {showSuggestions && aiError && (
         <p className="px-4 py-2 text-xs text-muted-foreground">
           Kunde inte generera förslag
         </p>
