@@ -83,7 +83,7 @@ export default function ConversationList({
                 </span>
               </div>
               <div className="flex justify-between items-center gap-2 mt-0.5">
-                <span className="text-xs text-muted-foreground truncate">
+                <span className={`text-xs truncate ${conv.unread_count > 0 ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
                   {conv.last_message_direction === 'outbound' && 'Du: '}
                   {conv.last_message_preview || 'Inget meddelande'}
                 </span>
