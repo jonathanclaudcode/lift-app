@@ -15,7 +15,7 @@ export default async function AppLayout({
 
     if (!user) redirect('/login')
 
-    const clinicId = user.app_metadata?.clinic_id
+    const clinicId = user.app_metadata?.clinic_id as string | undefined
     if (!clinicId) redirect('/login')
 
     const { data: clinic } = await supabase

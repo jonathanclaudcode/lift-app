@@ -28,13 +28,15 @@ function LoginForm() {
       setError('Inloggningslänken har gått ut. Försök igen.')
     }
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.app_metadata?.clinic_id) {
+    async function checkUser() {
+      const { data } = await supabase.auth.getUser()
+      if (data.user?.app_metadata?.clinic_id) {
         router.push('/dashboard')
       } else {
         setChecking(false)
       }
-    })
+    }
+    checkUser()
   }, [searchParams, router, supabase.auth])
 
   async function handleSubmit(e: React.FormEvent) {
