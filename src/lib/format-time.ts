@@ -24,3 +24,24 @@ export function formatMessageTime(date: string | Date | null | undefined): strin
   if (isNaN(d.getTime())) return ''
   return d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
 }
+
+export function formatDateLabel(date: string | Date): string {
+  const d = new Date(date)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000)
+
+  if (diffDays === 0) return 'Idag'
+  if (diffDays === 1) return 'Igår'
+
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' })
+  }
+  return d.toLocaleDateString('sv-SE', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+export function getDateKey(date: string | Date): string {
+  const d = new Date(date)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}

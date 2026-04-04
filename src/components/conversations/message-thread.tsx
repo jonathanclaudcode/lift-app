@@ -8,7 +8,7 @@ import { markSuggestionChosen } from '@/actions/ai'
 import { useAiSuggestions } from '@/hooks/use-ai-suggestions'
 import { Bot, Send, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatMessageTime } from '@/lib/format-time'
+import { formatMessageTime, formatDateLabel, getDateKey } from '@/lib/format-time'
 import type { Message } from '@/types/conversations'
 
 export default function MessageThread({
@@ -142,13 +142,22 @@ export default function MessageThread({
         className="flex-1 overflow-y-auto flex flex-col justify-end min-h-0"
       >
         <div className="mt-auto px-4 pt-2">
-          {messages.map((msg) => {
+          {messages.map((msg, index) => {
             const isOutbound = msg.direction === 'outbound'
+            const prevMsg = messages[index - 1]
+            const showDateSeparator =
+              index === 0 ||
+              (prevMsg && getDateKey(msg.created_at) !== getDateKey(prevMsg.created_at))
             return (
-              <div
-                key={msg.id}
-                className={`flex flex-col mb-3 ${isOutbound ? 'items-end' : 'items-start'}`}
-              >
+              <div key={msg.id}>
+                {showDateSeparator && (
+                  <div className="text-xs text-muted-foreground text-center py-4">
+                    {formatDateLabel(msg.created_at)}
+                  </div>
+                )}
+                <div
+                  className={`flex flex-col mb-3 ${isOutbound ? 'items-end' : 'items-start'}`}
+                >
                 <div
                   className={
                     isOutbound
@@ -165,6 +174,7 @@ export default function MessageThread({
                   {msg.author === 'ai_agent' && <Bot className="h-3 w-3 text-muted-foreground" />}
                   {isOutbound && msg.status === 'sending' && <Clock className="h-3 w-3 text-muted-foreground" />}
                 </div>
+              </div>
               </div>
             )
           })}
