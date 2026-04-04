@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     // Validate required fields
     if (!elksMsgId || !from || !to || !message) {
       console.error('[SMS Webhook] Missing required fields', { id: elksMsgId, from, to, hasMessage: !!message })
-      return new Response('ok', { status: 200 })
+      return new Response(null, { status: 200 })
     }
 
     const admin = createAdminClient()
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       .limit(1)
 
     if (existing && existing.length > 0) {
-      return new Response('ok', { status: 200 })
+      return new Response(null, { status: 200 })
     }
 
     // Find clinic by normalized 'to' number
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
     if (!clinics || clinics.length === 0) {
       console.error('[SMS Webhook] No clinic found for number', normalizedTo)
-      return new Response('ok', { status: 200 })
+      return new Response(null, { status: 200 })
     }
 
     if (clinics.length > 1) {
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
 
     if (!customer) {
       console.error('[SMS Webhook] Failed to find or create customer', { clinic_id: clinic.id, phone: normalizedFrom })
-      return new Response('ok', { status: 200 })
+      return new Response(null, { status: 200 })
     }
 
     // Find or create conversation (BEFORE message — trigger needs existing conversation)
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
 
     if (!conversation) {
       console.error('[SMS Webhook] Failed to find or create conversation', { clinic_id: clinic.id, customer_id: customer.id })
-      return new Response('ok', { status: 200 })
+      return new Response(null, { status: 200 })
     }
 
     // Create the message
@@ -144,11 +144,11 @@ export async function POST(request: Request) {
     const maskedFrom = '***' + normalizedFrom.slice(-4)
     console.info(`[SMS Webhook] Received from ${maskedFrom} for clinic ${clinic.id}, msgId: ${elksMsgId}, 46elks created: ${created ?? 'unknown'}`)
 
-    return new Response('ok', { status: 200 })
+    return new Response(null, { status: 200 })
   } catch (error) {
     // Catch ALL errors — normalization crashes, DB errors, everything.
     // Always return 200 to avoid 46elks retries.
     console.error('[SMS Webhook] Unhandled error:', error)
-    return new Response('ok', { status: 200 })
+    return new Response(null, { status: 200 })
   }
 }
