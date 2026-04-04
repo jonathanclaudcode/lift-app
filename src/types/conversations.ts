@@ -11,6 +11,7 @@ export interface ConversationListItem {
   status: string
   last_message_at: string | null
   last_message_preview: string | null
+  last_message_direction: 'inbound' | 'outbound' | null
   unread_count: number
   customer_id: string
   customers: ConversationCustomer

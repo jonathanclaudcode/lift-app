@@ -11,7 +11,7 @@ export function useConversations(clinicId: string, initialData?: ConversationLis
       const supabase = createClient()
       const { data, error } = await supabase
         .from('conversations')
-        .select('id, channel, status, last_message_at, last_message_preview, unread_count, customer_id, customers(id, name, phone, pipeline_stage)')
+        .select('id, channel, status, last_message_at, last_message_preview, last_message_direction, unread_count, customer_id, customers(id, name, phone, pipeline_stage)')
         .eq('status', 'active')
         .order('last_message_at', { ascending: false, nullsFirst: false })
 
