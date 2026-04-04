@@ -211,7 +211,7 @@ export default function MessageThread({
 
       {/* Input area */}
       <div className="shrink-0 border-t bg-background p-3">
-        <div className="flex gap-2 items-end">
+        <div className="flex items-end gap-2 rounded-2xl border bg-background shadow-sm px-3 py-2">
           <textarea
             ref={textareaRef}
             value={inputValue}
@@ -219,14 +219,14 @@ export default function MessageThread({
             onInput={handleTextareaInput}
             onKeyDown={handleKeyDown}
             placeholder="Skriv ett meddelande..."
-            className="flex-1 min-h-[40px] max-h-[120px] resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="flex-1 min-h-[36px] max-h-[120px] resize-none border-0 bg-transparent py-1 text-sm focus:outline-none focus:ring-0"
             rows={1}
           />
           <Button
             onClick={handleSend}
             disabled={!inputValue.trim() || isSending}
             size="icon"
-            className="shrink-0"
+            className="shrink-0 rounded-full h-8 w-8 transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
           >
             <Send className="h-4 w-4" />
           </Button>
