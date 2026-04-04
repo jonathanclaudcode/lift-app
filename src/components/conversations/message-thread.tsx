@@ -157,17 +157,13 @@ export default function MessageThread({
                   }
                 >
                   <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
-                  {msg.author === 'ai_agent' && (
-                    <div className="flex items-center gap-1 mt-1 justify-end">
-                      <Bot className="h-3 w-3 opacity-60" />
-                    </div>
-                  )}
                 </div>
                 <div className="flex items-center gap-1 mt-0.5 px-1">
                   <span className="text-xs text-muted-foreground">
                     {formatMessageTime(msg.created_at)}
                   </span>
-                  {msg.status === 'sending' && <Clock className="h-3 w-3 text-muted-foreground" />}
+                  {msg.author === 'ai_agent' && <Bot className="h-3 w-3 text-muted-foreground" />}
+                  {isOutbound && msg.status === 'sending' && <Clock className="h-3 w-3 text-muted-foreground" />}
                 </div>
               </div>
             )
