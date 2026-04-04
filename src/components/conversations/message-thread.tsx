@@ -157,25 +157,30 @@ export default function MessageThread({
           className="px-4 py-2"
           itemContent={(_index: number, data: unknown) => {
             const msg = data as Message
+            const isOutbound = msg.direction === 'outbound'
             return (
               <div
-                className={`flex mb-2 ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
+                className={`flex flex-col mb-3 ${isOutbound ? 'items-end' : 'items-start'}`}
               >
                 <div
                   className={
-                    msg.direction === 'outbound'
-                      ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-4 py-2 max-w-[80%] shadow-sm'
-                      : 'bg-muted rounded-2xl rounded-bl-sm px-4 py-2 max-w-[80%] shadow-sm'
+                    isOutbound
+                      ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-4 py-2 max-w-[85%] shadow-sm'
+                      : 'bg-muted text-foreground rounded-2xl rounded-bl-sm px-4 py-2 max-w-[85%] shadow-sm'
                   }
                 >
                   <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
-                  <div className="flex items-center gap-1 mt-1 justify-end">
-                    <span className="text-[10px] opacity-60">
-                      {formatMessageTime(msg.created_at)}
-                    </span>
-                    {msg.author === 'ai_agent' && <Bot className="h-3 w-3 opacity-60" />}
-                    {msg.status === 'sending' && <Clock className="h-3 w-3 opacity-60" />}
-                  </div>
+                  {msg.author === 'ai_agent' && (
+                    <div className="flex items-center gap-1 mt-1 justify-end">
+                      <Bot className="h-3 w-3 opacity-60" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 mt-0.5 px-1">
+                  <span className="text-xs text-muted-foreground">
+                    {formatMessageTime(msg.created_at)}
+                  </span>
+                  {msg.status === 'sending' && <Clock className="h-3 w-3 text-muted-foreground" />}
                 </div>
               </div>
             )
