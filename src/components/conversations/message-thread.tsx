@@ -155,28 +155,31 @@ export default function MessageThread({
           followOutput="smooth"
           initialTopMostItemIndex={Math.max(0, messages.length - 1)}
           className="px-4 py-2"
-          itemContent={(_index: number, message: Message) => (
-            <div
-              className={`flex mb-2 ${message.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
-            >
+          itemContent={(_index: number, data: unknown) => {
+            const msg = data as Message
+            return (
               <div
-                className={
-                  message.direction === 'outbound'
-                    ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-4 py-2 max-w-[80%] shadow-sm'
-                    : 'bg-muted rounded-2xl rounded-bl-sm px-4 py-2 max-w-[80%] shadow-sm'
-                }
+                className={`flex mb-2 ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
               >
-                <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
-                <div className="flex items-center gap-1 mt-1 justify-end">
-                  <span className="text-[10px] opacity-60">
-                    {formatMessageTime(message.created_at)}
-                  </span>
-                  {message.author === 'ai_agent' && <Bot className="h-3 w-3 opacity-60" />}
-                  {message.status === 'sending' && <Clock className="h-3 w-3 opacity-60" />}
+                <div
+                  className={
+                    msg.direction === 'outbound'
+                      ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-sm px-4 py-2 max-w-[80%] shadow-sm'
+                      : 'bg-muted rounded-2xl rounded-bl-sm px-4 py-2 max-w-[80%] shadow-sm'
+                  }
+                >
+                  <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                  <div className="flex items-center gap-1 mt-1 justify-end">
+                    <span className="text-[10px] opacity-60">
+                      {formatMessageTime(msg.created_at)}
+                    </span>
+                    {msg.author === 'ai_agent' && <Bot className="h-3 w-3 opacity-60" />}
+                    {msg.status === 'sending' && <Clock className="h-3 w-3 opacity-60" />}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )
+          }}
         />
       </div>
 
