@@ -43,7 +43,11 @@ export default function ConversationList({
   }
 
   return (
-    <ScrollArea className="h-full">
+    <div className="flex flex-col h-full">
+      <div className="sticky top-0 z-10 bg-background border-b px-4 py-3">
+        <h1 className="text-lg font-semibold">Konversationer</h1>
+      </div>
+      <ScrollArea className="flex-1">
       {conversations.map((conv) => {
         const customer = conv.customers
         const initial = customer.name.charAt(0).toUpperCase()
@@ -64,10 +68,15 @@ export default function ConversationList({
             </Avatar>
             <div className="flex-1 min-w-0">
               <div className="flex justify-between items-baseline gap-2">
-                <span
-                  className={`text-sm truncate ${conv.unread_count > 0 ? 'font-semibold' : 'font-medium'}`}
-                >
-                  {customer.name}
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    className={`text-sm truncate ${conv.unread_count > 0 ? 'font-semibold' : 'font-medium'}`}
+                  >
+                    {customer.name}
+                  </span>
+                  <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-4">
+                    {conv.channel === 'whatsapp' ? 'WhatsApp' : conv.channel === 'sms' ? 'SMS' : conv.channel === 'messenger' ? 'Messenger' : conv.channel.toUpperCase()}
+                  </Badge>
                 </span>
                 <span className="text-xs text-muted-foreground shrink-0">
                   {formatRelativeTime(conv.last_message_at)}
@@ -87,6 +96,7 @@ export default function ConversationList({
           </Link>
         )
       })}
-    </ScrollArea>
+      </ScrollArea>
+    </div>
   )
 }
