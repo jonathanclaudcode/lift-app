@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef, useState, useEffect, useTransition } from 'react'
-import dynamic from 'next/dynamic'
 import { useQueryClient } from '@tanstack/react-query'
 import { useMessages } from '@/hooks/use-messages'
 import { sendMessage, markConversationRead } from '@/actions/messages'
@@ -9,11 +8,6 @@ import { Bot, Send, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatMessageTime } from '@/lib/format-time'
 import type { Message } from '@/types/conversations'
-
-const Virtuoso = dynamic(
-  () => import('react-virtuoso').then((m) => m.Virtuoso),
-  { ssr: false }
-)
 
 export default function MessageThread({
   conversationId,
@@ -28,7 +22,8 @@ export default function MessageThread({
 }) {
   const [inputValue, setInputValue] = useState('')
   const [isSending, setIsSending] = useState(false)
-  const virtuosoRef = useRef<any>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const queryClient = useQueryClient()
   const [isPending, startTransition] = useTransition()
@@ -38,6 +33,11 @@ export default function MessageThread({
     markConversationRead(conversationId)
     queryClient.invalidateQueries({ queryKey: ['conversations'] })
   }, [conversationId, queryClient])
+
+  // Scroll to bottom on mount and when messages change
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+  }, [messages.length])
 
   // Suggestion chips
   const lastMessage = messages[messages.length - 1]
@@ -148,19 +148,16 @@ export default function MessageThread({
   return (
     <div className="flex flex-col h-full">
       {/* Message list */}
-      <div className="flex-1 overflow-hidden min-h-0">
-        <Virtuoso
-          ref={virtuosoRef}
-          data={messages}
-          alignToBottom
-          followOutput="smooth"
-          initialTopMostItemIndex={Math.max(0, messages.length - 1)}
-          className="px-4 py-2"
-          itemContent={(_index: number, data: unknown) => {
-            const msg = data as Message
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto flex flex-col justify-end min-h-0"
+      >
+        <div className="mt-auto px-4 py-2">
+          {messages.map((msg) => {
             const isOutbound = msg.direction === 'outbound'
             return (
               <div
+                key={msg.id}
                 className={`flex flex-col mb-3 ${isOutbound ? 'items-end' : 'items-start'}`}
               >
                 <div
@@ -185,8 +182,9 @@ export default function MessageThread({
                 </div>
               </div>
             )
-          }}
-        />
+          })}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
       {/* Suggestion chips */}
