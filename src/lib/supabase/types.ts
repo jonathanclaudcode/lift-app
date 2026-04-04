@@ -7,8 +7,35 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.5"
+  }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -359,12 +386,17 @@ export type Database = {
         Row: {
           chosen_index: number | null
           clinic_id: string
+          completion_tokens: number | null
+          conversation_id: string | null
           created_at: string | null
+          customer_id: string | null
           edit_distance: number | null
           edit_ratio: number | null
           final_text: string | null
           id: string
           message_id: string | null
+          model: string | null
+          prompt_tokens: number | null
           response_time_ms: number | null
           suggested_text: string | null
           suggestions: Json
@@ -372,12 +404,17 @@ export type Database = {
         Insert: {
           chosen_index?: number | null
           clinic_id: string
+          completion_tokens?: number | null
+          conversation_id?: string | null
           created_at?: string | null
+          customer_id?: string | null
           edit_distance?: number | null
           edit_ratio?: number | null
           final_text?: string | null
           id?: string
           message_id?: string | null
+          model?: string | null
+          prompt_tokens?: number | null
           response_time_ms?: number | null
           suggested_text?: string | null
           suggestions: Json
@@ -385,12 +422,17 @@ export type Database = {
         Update: {
           chosen_index?: number | null
           clinic_id?: string
+          completion_tokens?: number | null
+          conversation_id?: string | null
           created_at?: string | null
+          customer_id?: string | null
           edit_distance?: number | null
           edit_ratio?: number | null
           final_text?: string | null
           id?: string
           message_id?: string | null
+          model?: string | null
+          prompt_tokens?: number | null
           response_time_ms?: number | null
           suggested_text?: string | null
           suggestions?: Json
@@ -401,6 +443,20 @@ export type Database = {
             columns: ["clinic_id"]
             isOneToOne: false
             referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "suggestion_events_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "suggestion_events_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
             referencedColumns: ["id"]
           },
           {
