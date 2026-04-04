@@ -152,7 +152,7 @@ export default function MessageThread({
         ref={scrollRef}
         className="flex-1 overflow-y-auto flex flex-col justify-end min-h-0"
       >
-        <div className="mt-auto px-4 py-2">
+        <div className="mt-auto px-4 pt-2">
           {messages.map((msg) => {
             const isOutbound = msg.direction === 'outbound'
             return (
