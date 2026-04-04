@@ -4,6 +4,8 @@ import { useRef, useState, useEffect, useTransition } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useMessages } from '@/hooks/use-messages'
 import { sendMessage, markConversationRead } from '@/actions/messages'
+import { markSuggestionChosen } from '@/actions/ai'
+import { useAiSuggestions } from '@/hooks/use-ai-suggestions'
 import { Bot, Send, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatMessageTime } from '@/lib/format-time'
@@ -26,7 +28,7 @@ export default function MessageThread({
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const queryClient = useQueryClient()
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   const { data: messages = [] } = useMessages(conversationId, initialMessages)
 
   useEffect(() => {
@@ -39,37 +41,24 @@ export default function MessageThread({
     bottomRef.current?.scrollIntoView({ behavior: 'instant' })
   }, [messages.length])
 
-  // Suggestion chips
-  const lastMessage = messages[messages.length - 1]
-  const showChips = lastMessage?.direction === 'inbound'
+  // AI suggestion logic
+  const lastMessage = messages.at(-1)
+  const lastInboundMessage = messages.filter((m) => m.direction === 'inbound').at(-1)
+  const lastInboundMessageId = lastInboundMessage?.id
+  const shouldShowSuggestions = lastMessage?.direction === 'inbound'
 
-  let suggestions: string[] = []
-  if (showChips) {
-    const content = lastMessage.content.toLowerCase()
-    if (content.includes('boka') || content.includes('tid') || content.includes('behandling')) {
-      suggestions = [
-        'Absolut! Vi har tider på torsdag och fredag 😊',
-        'Självklart, vilken tid passar dig?',
-        'Jag kollar schemat och återkommer!',
-      ]
-    } else if (content.includes('avbok') || content.includes('ändra') || content.includes('flytta')) {
-      suggestions = [
-        'Inga problem! Vill du boka om till en annan tid?',
-        'Jag fixar det, vilken dag passar bättre?',
-        'Okej! Jag avbokar och skickar förslag på nya tider',
-      ]
-    } else if (content.includes('tack')) {
-      suggestions = [
-        'Tack själv! Hör av dig om du undrar något 💕',
-        'Alltid! Vi finns här om du behöver oss',
-        'Så kul att höra! Ha en fin dag ✨',
-      ]
-    } else {
-      suggestions = [
-        'Tack för ditt meddelande! 😊',
-        'Absolut, jag hjälper dig gärna!',
-        'Jag kollar upp det och återkommer snart',
-      ]
+  const {
+    data: aiData,
+    isLoading: aiLoading,
+    isError: aiError,
+  } = useAiSuggestions(conversationId, clinicId, lastInboundMessageId, shouldShowSuggestions)
+
+  function handleSelectSuggestion(text: string, index: number) {
+    setInputValue(text)
+    textareaRef.current?.focus()
+
+    if (aiData?.triggeringMessageId) {
+      void markSuggestionChosen(clinicId, aiData.triggeringMessageId, index, text)
     }
   }
 
@@ -187,24 +176,37 @@ export default function MessageThread({
         </div>
       </div>
 
-      {/* Suggestion chips */}
-      {showChips && suggestions.length > 0 && (
-        <div className="px-4 py-2 flex gap-2 flex-wrap border-t bg-muted/30">
-          {suggestions.map((suggestion) => (
-            <Button
-              key={suggestion}
-              variant="outline"
-              size="sm"
-              className="rounded-full text-xs h-auto py-1.5"
-              onClick={() => {
-                setInputValue(suggestion)
-                textareaRef.current?.focus()
-              }}
-            >
-              {suggestion}
-            </Button>
+      {/* AI suggestion chips */}
+      {shouldShowSuggestions && aiLoading && (
+        <div className="flex flex-col gap-2 px-4 py-2 border-t bg-muted/30">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-12 rounded-2xl bg-muted animate-pulse"
+              style={{ width: `${60 + i * 10}%` }}
+            />
           ))}
         </div>
+      )}
+
+      {shouldShowSuggestions && aiData?.suggestions && aiData.suggestions.length > 0 && (
+        <div className="flex flex-col gap-2 px-4 py-2 border-t bg-muted/30">
+          {aiData.suggestions.map((suggestion, index) => (
+            <button
+              key={`${lastInboundMessageId}-${index}`}
+              onClick={() => handleSelectSuggestion(suggestion.text, index)}
+              className="rounded-2xl border px-4 py-3 text-sm hover:bg-accent transition-colors text-left"
+            >
+              {suggestion.text}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {shouldShowSuggestions && aiError && (
+        <p className="px-4 py-2 text-xs text-muted-foreground">
+          Kunde inte generera förslag
+        </p>
       )}
 
       {/* Input area */}
