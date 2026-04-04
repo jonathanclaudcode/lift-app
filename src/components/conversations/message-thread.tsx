@@ -208,7 +208,7 @@ export default function MessageThread({
       )}
 
       {/* Input area */}
-      <div className="shrink-0 border-t bg-background p-3">
+      <div className="shrink-0 border-t bg-background px-3 py-1.5">
         <div className="flex items-end gap-2 rounded-2xl border bg-background shadow-sm px-3 py-2">
           <textarea
             ref={textareaRef}
