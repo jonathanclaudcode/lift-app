@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
+  MessageCircle,
   MessageSquare,
   Calendar,
   Users,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react'
 
 const navItems = [
+  { label: 'AI Assistent', href: '/assistant', icon: MessageCircle },
   { label: 'Chatt', href: '/chat', icon: MessageSquare },
   { label: 'Kalender', href: '/calendar', icon: Calendar },
   { label: 'Kunder', href: '/customers', icon: Users },
