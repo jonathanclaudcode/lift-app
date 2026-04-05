@@ -17,11 +17,11 @@ export default async function AssistantPage() {
   if (!clinicId) redirect('/login')
 
   // Ensure clinic_preferences row exists (admin — bypasses RLS for upsert)
+  // Ensure clinic_preferences row exists (admin — bypasses RLS for upsert)
   const admin = createAdminClient()
   await admin
     .from('clinic_preferences')
     .upsert({ clinic_id: clinicId }, { onConflict: 'clinic_id', ignoreDuplicates: true })
-    .catch(() => {})
 
   // Fetch newest 100 messages, then reverse to chronological order
   const { data: messagesDesc } = await supabase

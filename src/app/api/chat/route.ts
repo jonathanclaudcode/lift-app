@@ -121,30 +121,23 @@ export async function POST(request: Request) {
       throw new Error(`Failed to save response: ${assistantInsertError.message}`)
     }
 
-    // Log trace (admin client, fire-and-forget)
-    admin
-      .from('ai_traces')
-      .insert({
-        clinic_id: clinicId,
-        message_id: savedAssistantMsg.id,
-        model: response.model,
-        input_tokens: response.usage.input_tokens,
-        output_tokens: response.usage.output_tokens,
-        latency_ms: latencyMs,
-        finish_reason: response.stop_reason,
-        metadata: {
-          history_length: messages.length,
-          owner_message_id: savedOwnerMsg.id,
-        },
-      })
-      .then(() => {})
-      .catch(() => {})
+    // Log trace (non-critical)
+    await admin.from('ai_traces').insert({
+      clinic_id: clinicId,
+      message_id: savedAssistantMsg.id,
+      model: response.model,
+      input_tokens: response.usage.input_tokens,
+      output_tokens: response.usage.output_tokens,
+      latency_ms: latencyMs,
+      finish_reason: response.stop_reason,
+      metadata: {
+        history_length: messages.length,
+        owner_message_id: savedOwnerMsg.id,
+      },
+    })
 
-    // Increment interaction count (admin, fire-and-forget)
-    admin
-      .rpc('increment_interaction_count', { p_clinic_id: clinicId })
-      .then(() => {})
-      .catch(() => {})
+    // Increment interaction count (non-critical)
+    await admin.rpc('increment_interaction_count', { p_clinic_id: clinicId })
 
     return Response.json({
       id: savedAssistantMsg.id,
@@ -156,20 +149,16 @@ export async function POST(request: Request) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error('Chat API error:', errorMessage)
 
-    // Log error trace (admin, fire-and-forget)
-    admin
-      .from('ai_traces')
-      .insert({
-        clinic_id: clinicId,
-        model: AI_MODEL,
-        latency_ms: Date.now() - startTime,
-        error: errorMessage,
-        metadata: {
-          error_type: error instanceof Error ? error.constructor.name : 'unknown',
-        },
-      })
-      .then(() => {})
-      .catch(() => {})
+    // Log error trace (non-critical)
+    await admin.from('ai_traces').insert({
+      clinic_id: clinicId,
+      model: AI_MODEL,
+      latency_ms: Date.now() - startTime,
+      error: errorMessage,
+      metadata: {
+        error_type: error instanceof Error ? error.constructor.name : 'unknown',
+      },
+    })
 
     return Response.json({ error: 'Något gick fel. Försök igen.' }, { status: 500 })
   }
