@@ -4,19 +4,17 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  LayoutDashboard,
   MessageSquare,
-  Kanban,
-  Bot,
+  Calendar,
+  Users,
   Settings,
   LogOut,
 } from 'lucide-react'
 
 const navItems = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Konversationer', href: '/conversations', icon: MessageSquare },
-  { label: 'Pipeline', href: '/pipeline', icon: Kanban },
-  { label: 'AI Assistent', href: '/assistant', icon: Bot },
+  { label: 'Chatt', href: '/chat', icon: MessageSquare },
+  { label: 'Kalender', href: '/calendar', icon: Calendar },
+  { label: 'Kunder', href: '/customers', icon: Users },
   { label: 'Inställningar', href: '/settings', icon: Settings },
 ]
 
