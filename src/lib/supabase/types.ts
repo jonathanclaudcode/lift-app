@@ -39,6 +39,107 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_chat_messages: {
+        Row: {
+          clinic_id: string
+          content: string
+          created_at: string
+          id: string
+          input_tokens: number | null
+          latency_ms: number | null
+          model: string | null
+          output_tokens: number | null
+          role: string
+        }
+        Insert: {
+          clinic_id: string
+          content: string
+          created_at?: string
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          role: string
+        }
+        Update: {
+          clinic_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_chat_messages_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_traces: {
+        Row: {
+          clinic_id: string
+          created_at: string
+          error: string | null
+          finish_reason: string | null
+          id: string
+          input_tokens: number | null
+          latency_ms: number
+          message_id: string | null
+          metadata: Json | null
+          model: string
+          output_tokens: number | null
+        }
+        Insert: {
+          clinic_id: string
+          created_at?: string
+          error?: string | null
+          finish_reason?: string | null
+          id?: string
+          input_tokens?: number | null
+          latency_ms: number
+          message_id?: string | null
+          metadata?: Json | null
+          model: string
+          output_tokens?: number | null
+        }
+        Update: {
+          clinic_id?: string
+          created_at?: string
+          error?: string | null
+          finish_reason?: string | null
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number
+          message_id?: string | null
+          metadata?: Json | null
+          model?: string
+          output_tokens?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_traces_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_traces_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "ai_chat_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bookings: {
         Row: {
           bokadirekt_id: string | null
@@ -108,6 +209,47 @@ export type Database = {
           },
         ]
       }
+      clinic_knowledge: {
+        Row: {
+          category: string
+          clinic_id: string
+          content: string
+          created_at: string
+          id: string
+          is_active: boolean
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          clinic_id: string
+          content: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          clinic_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_knowledge_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clinic_members: {
         Row: {
           clinic_id: string
@@ -138,6 +280,35 @@ export type Database = {
             foreignKeyName: "clinic_members_clinic_id_fkey"
             columns: ["clinic_id"]
             isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clinic_preferences: {
+        Row: {
+          clinic_id: string
+          interaction_count: number
+          relationship_phase: string
+          updated_at: string
+        }
+        Insert: {
+          clinic_id: string
+          interaction_count?: number
+          relationship_phase?: string
+          updated_at?: string
+        }
+        Update: {
+          clinic_id?: string
+          interaction_count?: number
+          relationship_phase?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clinic_preferences_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: true
             referencedRelation: "clinics"
             referencedColumns: ["id"]
           },
@@ -193,6 +364,7 @@ export type Database = {
           customer_id: string
           id: string
           last_message_at: string | null
+          last_message_direction: string | null
           last_message_preview: string | null
           status: string | null
           unread_count: number | null
@@ -205,6 +377,7 @@ export type Database = {
           customer_id: string
           id?: string
           last_message_at?: string | null
+          last_message_direction?: string | null
           last_message_preview?: string | null
           status?: string | null
           unread_count?: number | null
@@ -217,6 +390,7 @@ export type Database = {
           customer_id?: string
           id?: string
           last_message_at?: string | null
+          last_message_direction?: string | null
           last_message_preview?: string | null
           status?: string | null
           unread_count?: number | null
@@ -503,6 +677,10 @@ export type Database = {
     }
     Functions: {
       get_clinic_id: { Args: never; Returns: string }
+      increment_interaction_count: {
+        Args: { p_clinic_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
