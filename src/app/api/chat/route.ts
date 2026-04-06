@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { buildSystemPrompt } from '@/lib/ai/system-prompt'
 import { AI_MODEL } from '@/lib/ai/client'
 import { detectExplicitCorrection, detectNoGoZone } from '@/lib/ai/detect-corrections'
+import { detectKnowledgeUpdate, type DetectedKnowledge } from '@/lib/ai/detect-knowledge'
 
 export const maxDuration = 30
 
@@ -141,6 +142,18 @@ export async function POST(request: Request) {
       .order('source_date', { ascending: false })
       .limit(5)
 
+    // Fetch clinic knowledge
+    const { data: clinicKnowledge, error: knowledgeError } = await supabase
+      .from('clinic_knowledge')
+      .select('category, content')
+      .eq('clinic_id', clinicId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true })
+
+    if (knowledgeError) {
+      console.error('Failed to fetch clinic knowledge:', knowledgeError)
+    }
+
     // Build system prompt
     const systemPrompt = buildSystemPrompt({
       clinicName,
@@ -148,6 +161,7 @@ export async function POST(request: Request) {
       corrections: (corrections || []) as Array<{ interpreted_rule: string }>,
       noGoZones: (noGoZones || []) as Array<{ topic: string; topic_keywords: string[] }>,
       memories: (memories || []) as Array<{ content: string }>,
+      clinicKnowledge: (clinicKnowledge || []) as Array<{ category: string; content: string }>,
     })
 
     // Call Anthropic with retry logic
@@ -312,31 +326,35 @@ async function processPostMessage(
         console.error('Failed to insert no-go zone:', err)
       }
     }
-    return
+    // NOTE: No early return — confidence decay and knowledge detection still run below
   }
 
   // 2. Detect explicit correction (only if no no-go zone found)
-  const correction = detectExplicitCorrection(ownerMessage)
-  if (correction) {
-    try {
-      await admin.from('ai_corrections').insert({
-        clinic_id: clinicId,
-        correction_text: correction.text,
-        interpreted_rule: correction.rule,
-        forbidden_phrase: correction.forbiddenPhrase
-          ? correction.forbiddenPhrase.toLowerCase().trim()
-          : null,
-        preference_key: correction.mappedPreference,
-      })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : ''
-      if (!msg.includes('unique') && !msg.includes('duplicate')) {
-        console.error('Failed to insert correction:', err)
+  if (!noGo) {
+    const correction = detectExplicitCorrection(ownerMessage)
+    if (correction) {
+      try {
+        await admin.from('ai_corrections').insert({
+          clinic_id: clinicId,
+          correction_text: correction.text,
+          interpreted_rule: correction.rule,
+          forbidden_phrase: correction.forbiddenPhrase
+            ? correction.forbiddenPhrase.toLowerCase().trim()
+            : null,
+          preference_key: correction.mappedPreference,
+        })
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : ''
+        if (!msg.includes('unique') && !msg.includes('duplicate')) {
+          console.error('Failed to insert correction:', err)
+        }
       }
     }
   }
 
   // 3. No-go zone confidence decay
+  // NOTE: This now runs even when a no-go was detected in step 1 (intentional behavior
+  // change from Prompt 1 where the early return blocked it).
   const { data: activeZones } = await admin
     .from('ai_no_go_zones')
     .select('id, topic_keywords, confidence')
@@ -375,5 +393,56 @@ async function processPostMessage(
         }
       }
     }
+  }
+
+  // 4. Auto-learn clinic knowledge
+  const knowledge = detectKnowledgeUpdate(ownerMessage)
+  if (knowledge) {
+    await saveDetectedKnowledge(admin, clinicId, knowledge)
+  }
+}
+
+async function saveDetectedKnowledge(
+  admin: ReturnType<typeof createAdminClient>,
+  clinicId: string,
+  knowledge: DetectedKnowledge
+): Promise<void> {
+  if (knowledge.isReplaceable) {
+    // REPLACEABLE facts (policies, hours): find existing and UPDATE
+    const { data: existing } = await admin
+      .from('clinic_knowledge')
+      .select('id')
+      .eq('clinic_id', clinicId)
+      .eq('category', knowledge.category)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle()
+
+    if (existing) {
+      const { error: updateError } = await admin
+        .from('clinic_knowledge')
+        .update({
+          content: knowledge.content,
+          source: knowledge.source,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+
+      if (updateError) console.error('Failed to update clinic knowledge:', updateError)
+      return
+    }
+  }
+
+  // ADDITIVE facts (team, treatments) or no existing replaceable: INSERT new row
+  const { error: insertError } = await admin.from('clinic_knowledge').insert({
+    clinic_id: clinicId,
+    category: knowledge.category,
+    content: knowledge.content,
+    source: knowledge.source,
+    is_active: true,
+  })
+
+  if (insertError) {
+    console.error('Failed to insert clinic knowledge:', insertError)
   }
 }
