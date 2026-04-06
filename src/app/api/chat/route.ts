@@ -131,12 +131,23 @@ export async function POST(request: Request) {
       .order('created_at', { ascending: false })
       .limit(10)
 
+    // Fetch memories (non-private daily summaries only)
+    const { data: memories } = await supabase
+      .from('ai_memories')
+      .select('content')
+      .eq('clinic_id', clinicId)
+      .eq('is_private', false)
+      .eq('memory_type', 'daily_summary')
+      .order('source_date', { ascending: false })
+      .limit(5)
+
     // Build system prompt
     const systemPrompt = buildSystemPrompt({
       clinicName,
       ownerName,
       corrections: (corrections || []) as Array<{ interpreted_rule: string }>,
       noGoZones: (noGoZones || []) as Array<{ topic: string; topic_keywords: string[] }>,
+      memories: (memories || []) as Array<{ content: string }>,
     })
 
     // Call Anthropic with retry logic
