@@ -9,6 +9,7 @@ interface SystemPromptOptions {
   clinicKnowledge?: Array<{ category: string; content: string }>
   personalityBlock?: string
   pendingTasks?: Array<{ description: string; due_date: string | null }>
+  source?: 'web' | 'whatsapp' | 'sms'
 }
 
 const KNOWLEDGE_CATEGORY_LABELS: Record<string, string> = {
@@ -179,6 +180,12 @@ ${memoryLines}`)
     parts.push(`
 PÅMINNELSER (väv in naturligt om det är relevant — nämn inte alla på en gång):
 ${taskLines.join('\n')}`)
+  }
+
+  // Channel-specific formatting
+  if (options.source === 'whatsapp') {
+    parts.push(`
+This conversation is happening via WhatsApp. Keep responses concise and mobile-friendly (under 500 words). Do not use markdown headers (#), bullet points, or links. WhatsApp only supports *bold*, _italic_, ~strikethrough~, and \`\`\`monospace\`\`\` formatting.`)
   }
 
   // Language rule
