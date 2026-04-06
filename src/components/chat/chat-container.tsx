@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Bot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ChatMessage } from './chat-message'
@@ -17,12 +17,24 @@ interface ChatContainerProps {
   initialMessages: Message[]
 }
 
+const BURST_DEBOUNCE_MS = 3000
+const BURST_DEBOUNCE_QUESTION_MS = 1500
+const BURST_MAX_WAIT_MS = 10000
+const PENDING_MSG_ID = 'pending-burst'
+
 export function ChatContainer({ initialMessages }: ChatContainerProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isTyping, setIsTyping] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const isInitialRender = useRef(true)
+
+  // Burst handling refs (mutable, no re-renders)
+  const pendingTextsRef = useRef<string[]>([])
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const burstStartRef = useRef<number | null>(null)
+  const isSendingRef = useRef(false)
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auto-scroll: instant on first render, smooth on subsequent messages
   useEffect(() => {
@@ -32,7 +44,7 @@ export function ChatContainer({ initialMessages }: ChatContainerProps) {
       behavior: isInitialRender.current ? 'instant' : 'smooth',
     })
     isInitialRender.current = false
-  }, [messages.length, isLoading])
+  }, [messages.length, isTyping])
 
   // Auto-clear error after 5 seconds
   useEffect(() => {
@@ -41,26 +53,26 @@ export function ChatContainer({ initialMessages }: ChatContainerProps) {
     return () => clearTimeout(timer)
   }, [error])
 
-  async function handleSend(text: string) {
-    if (isLoading) return
-
-    setError(null)
-
-    const optimisticMsg: Message = {
-      id: 'temp-' + Date.now(),
-      role: 'owner',
-      content: text,
-      created_at: new Date().toISOString(),
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
     }
+  }, [])
 
-    setMessages((prev) => [...prev, optimisticMsg])
-    setIsLoading(true)
+  const sendToApi = useCallback(async (message: string) => {
+    // Cosmetic typing delay — show indicator after 0.8-1.5s
+    const typingDelay = 800 + Math.random() * 700
+    typingTimerRef.current = setTimeout(() => {
+      setIsTyping(true)
+    }, typingDelay)
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message }),
       })
 
       if (!res.ok) {
@@ -71,15 +83,109 @@ export function ChatContainer({ initialMessages }: ChatContainerProps) {
       const assistantMsg: Message = await res.json()
       setMessages((prev) => [...prev, assistantMsg])
     } catch (err) {
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id))
+      // Remove the pending optimistic message on failure
+      setMessages((prev) => prev.filter((m) => m.id !== PENDING_MSG_ID))
       setError(err instanceof Error ? err.message : 'Något gick fel. Försök igen.')
     } finally {
-      setIsLoading(false)
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current)
+        typingTimerRef.current = null
+      }
+      setIsTyping(false)
     }
+  }, [])
+
+  const flushPendingMessages = useCallback(async () => {
+    if (isSendingRef.current) return
+    if (pendingTextsRef.current.length === 0) return
+
+    const combined = pendingTextsRef.current.join('\n\n')
+    pendingTextsRef.current = []
+    burstStartRef.current = null
+    isSendingRef.current = true
+
+    // Finalize the optimistic message content before sending
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === PENDING_MSG_ID ? { ...m, content: combined } : m
+      )
+    )
+
+    try {
+      await sendToApi(combined)
+    } finally {
+      isSendingRef.current = false
+
+      // If new messages arrived while sending, schedule another flush
+      if (pendingTextsRef.current.length > 0) {
+        const lastText = pendingTextsRef.current[pendingTextsRef.current.length - 1]
+        const debounceMs = lastText.endsWith('?')
+          ? BURST_DEBOUNCE_QUESTION_MS
+          : BURST_DEBOUNCE_MS
+        burstStartRef.current = Date.now()
+        debounceTimerRef.current = setTimeout(() => {
+          void flushPendingMessages()
+        }, debounceMs)
+      }
+    }
+  }, [sendToApi])
+
+  function handleSend(text: string) {
+    const trimmed = text.trim()
+    if (!trimmed) return
+
+    setError(null)
+    pendingTextsRef.current.push(trimmed)
+
+    // Track burst start time
+    if (pendingTextsRef.current.length === 1) {
+      burstStartRef.current = Date.now()
+    }
+
+    // Update optimistic message — ONE growing message during burst
+    const pendingContent = pendingTextsRef.current.join('\n\n')
+    setMessages((prev) => {
+      const existing = prev.find((m) => m.id === PENDING_MSG_ID)
+      if (existing) {
+        return prev.map((m) =>
+          m.id === PENDING_MSG_ID ? { ...m, content: pendingContent } : m
+        )
+      }
+      return [
+        ...prev,
+        {
+          id: PENDING_MSG_ID,
+          role: 'owner' as const,
+          content: pendingContent,
+          created_at: new Date().toISOString(),
+        },
+      ]
+    })
+
+    // Clear existing debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+    }
+
+    // Force flush if burst has exceeded max wait
+    const timeSinceBurstStart = Date.now() - (burstStartRef.current ?? Date.now())
+    if (timeSinceBurstStart >= BURST_MAX_WAIT_MS) {
+      void flushPendingMessages()
+      return
+    }
+
+    // Set debounce — shorter for questions
+    const debounceMs = trimmed.endsWith('?')
+      ? BURST_DEBOUNCE_QUESTION_MS
+      : BURST_DEBOUNCE_MS
+
+    debounceTimerRef.current = setTimeout(() => {
+      void flushPendingMessages()
+    }, debounceMs)
   }
 
   // Welcome state
-  if (messages.length === 0 && !isLoading) {
+  if (messages.length === 0 && !isTyping && pendingTextsRef.current.length === 0) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 flex flex-col items-center justify-center px-4">
@@ -108,7 +214,7 @@ export function ChatContainer({ initialMessages }: ChatContainerProps) {
           </div>
         </div>
         <div className="shrink-0 border-t bg-background p-3">
-          <ChatInput onSend={handleSend} disabled={isLoading} />
+          <ChatInput onSend={handleSend} disabled={false} />
         </div>
       </div>
     )
@@ -119,11 +225,16 @@ export function ChatContainer({ initialMessages }: ChatContainerProps) {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 overscroll-y-contain">
         {messages.map((msg) => (
-          <ChatMessage key={msg.id} role={msg.role} content={msg.content} created_at={msg.created_at} />
+          <ChatMessage
+            key={msg.id}
+            role={msg.role}
+            content={msg.content}
+            created_at={msg.created_at}
+          />
         ))}
 
         {/* Typing indicator */}
-        {isLoading && (
+        {isTyping && (
           <div className="flex justify-start mb-3">
             <div className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5">
               <span
@@ -150,7 +261,7 @@ export function ChatContainer({ initialMessages }: ChatContainerProps) {
 
       {/* Input */}
       <div className="shrink-0 border-t bg-background p-3">
-        <ChatInput onSend={handleSend} disabled={isLoading} />
+        <ChatInput onSend={handleSend} disabled={false} />
       </div>
     </div>
   )
