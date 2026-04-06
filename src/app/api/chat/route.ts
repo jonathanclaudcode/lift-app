@@ -1,10 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { buildSystemPrompt } from '@/lib/ai/system-prompt'
 import { AI_MODEL } from '@/lib/ai/client'
+import { detectExplicitCorrection, detectNoGoZone } from '@/lib/ai/detect-corrections'
 
 export const maxDuration = 30
+
+const CONVERSATION_GAP_MS = 60 * 60 * 1000 // 60 minutes
 
 const anthropic = new Anthropic()
 
@@ -54,6 +58,29 @@ export async function POST(request: Request) {
       .eq('id', clinicId)
       .single()
 
+    const clinicName = clinic?.name || 'din klinik'
+    const ownerName = user.email?.split('@')[0] || null
+
+    // Determine conversation_id
+    const { data: lastMsg } = await supabase
+      .from('ai_chat_messages')
+      .select('conversation_id, created_at')
+      .eq('clinic_id', clinicId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    let conversationId: string
+    if (
+      !lastMsg ||
+      !lastMsg.conversation_id ||
+      Date.now() - new Date(lastMsg.created_at).getTime() > CONVERSATION_GAP_MS
+    ) {
+      conversationId = crypto.randomUUID()
+    } else {
+      conversationId = lastMsg.conversation_id
+    }
+
     // Fetch recent history (newest 50 DESC, then reverse to chronological)
     const { data: historyDesc } = await supabase
       .from('ai_chat_messages')
@@ -73,7 +100,12 @@ export async function POST(request: Request) {
     // Save owner message
     const { data: savedOwnerMsg, error: ownerInsertError } = await supabase
       .from('ai_chat_messages')
-      .insert({ clinic_id: clinicId, role: 'owner', content: message.trim() })
+      .insert({
+        clinic_id: clinicId,
+        role: 'owner',
+        content: message.trim(),
+        conversation_id: conversationId,
+      })
       .select('id')
       .single()
 
@@ -81,25 +113,74 @@ export async function POST(request: Request) {
       throw new Error(`Failed to save message: ${ownerInsertError.message}`)
     }
 
-    // Build system prompt
-    const ownerName = user.email?.split('@')[0] || 'ägaren'
-    const systemPrompt = buildSystemPrompt(clinic?.name || 'din klinik', ownerName)
+    // Fetch corrections and no-go zones
+    const { data: corrections } = await supabase
+      .from('ai_corrections')
+      .select('interpreted_rule, forbidden_phrase')
+      .eq('clinic_id', clinicId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(10)
 
-    // Call Anthropic
-    const response = await anthropic.messages.create({
-      model: AI_MODEL,
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages,
+    const { data: noGoZones } = await supabase
+      .from('ai_no_go_zones')
+      .select('topic, topic_keywords')
+      .eq('clinic_id', clinicId)
+      .eq('is_active', true)
+      .gte('confidence', 0.4)
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    // Build system prompt
+    const systemPrompt = buildSystemPrompt({
+      clinicName,
+      ownerName,
+      corrections: (corrections || []) as Array<{ interpreted_rule: string }>,
+      noGoZones: (noGoZones || []) as Array<{ topic: string; topic_keywords: string[] }>,
     })
+
+    // Call Anthropic with retry logic
+    let response: Anthropic.Message
+    let retryCount = 0
+    const MAX_RETRIES = 1
+
+    while (true) {
+      try {
+        response = await anthropic.messages.create({
+          model: AI_MODEL,
+          max_tokens: 1024,
+          temperature: 0.7,
+          system: systemPrompt,
+          messages,
+        })
+        break
+      } catch (err: unknown) {
+        const status = (err as { status?: number })?.status
+        const isRetryable = status !== undefined && (status >= 500 || status === 429)
+        if (retryCount < MAX_RETRIES && isRetryable) {
+          retryCount++
+          const delay = status === 429 ? 2000 : 1000
+          console.warn(`Anthropic ${status}, retry ${retryCount}/${MAX_RETRIES} after ${delay}ms`)
+          await new Promise((r) => setTimeout(r, delay))
+          continue
+        }
+        throw err
+      }
+    }
 
     const latencyMs = Date.now() - startTime
 
-    const textBlock = response.content.find((block) => block.type === 'text')
-    const assistantContent = textBlock && textBlock.type === 'text' ? textBlock.text : ''
+    // Safe response extraction
+    const assistantText =
+      response.content?.length > 0 && response.content[0]?.type === 'text'
+        ? response.content[0].text
+        : ''
 
-    if (!assistantContent) {
-      throw new Error('AI returned empty response')
+    if (!assistantText) {
+      return Response.json(
+        { error: 'AI-tjänsten returnerade ett tomt svar. Försök igen.' },
+        { status: 502 }
+      )
     }
 
     // Save assistant message
@@ -108,11 +189,12 @@ export async function POST(request: Request) {
       .insert({
         clinic_id: clinicId,
         role: 'assistant',
-        content: assistantContent,
+        content: assistantText,
         model: response.model,
         input_tokens: response.usage.input_tokens,
         output_tokens: response.usage.output_tokens,
         latency_ms: latencyMs,
+        conversation_id: conversationId,
       })
       .select('id, created_at')
       .single()
@@ -133,33 +215,154 @@ export async function POST(request: Request) {
       metadata: {
         history_length: messages.length,
         owner_message_id: savedOwnerMsg.id,
+        temperature: 0.7,
       },
     })
 
     // Increment interaction count (non-critical)
     await admin.rpc('increment_interaction_count', { p_clinic_id: clinicId })
 
-    return Response.json({
+    const responsePayload = Response.json({
       id: savedAssistantMsg.id,
       role: 'assistant' as const,
-      content: assistantContent,
+      content: assistantText,
       created_at: savedAssistantMsg.created_at,
     })
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    console.error('Chat API error:', errorMessage)
 
-    // Log error trace (non-critical)
-    await admin.from('ai_traces').insert({
-      clinic_id: clinicId,
-      model: AI_MODEL,
-      latency_ms: Date.now() - startTime,
-      error: errorMessage,
-      metadata: {
-        error_type: error instanceof Error ? error.constructor.name : 'unknown',
-      },
+    // Post-processing runs after response is sent to client
+    after(async () => {
+      try {
+        await processPostMessage(admin, clinicId, message.trim())
+      } catch (err) {
+        console.error('Post-processing error:', err)
+      }
     })
 
+    return responsePayload
+  } catch (error: unknown) {
+    const status = (error as { status?: number })?.status
+    const errMsg = error instanceof Error ? error.message : 'Unknown error'
+    const errName = error instanceof Error ? error.name : undefined
+    console.error('Chat API error:', { status, message: errMsg, name: errName })
+
+    // Log error trace (non-critical)
+    try {
+      await admin.from('ai_traces').insert({
+        clinic_id: clinicId,
+        model: AI_MODEL,
+        latency_ms: Date.now() - startTime,
+        error: errMsg,
+        metadata: {
+          error_type: error instanceof Error ? error.constructor.name : 'unknown',
+        },
+      })
+    } catch {
+      // Trace logging must never prevent error response
+    }
+
+    if (status === 429) {
+      return Response.json(
+        { error: 'AI-tjänsten är överbelastad just nu. Försök igen om en minut.' },
+        { status: 429 }
+      )
+    }
+
+    if (status !== undefined && status >= 500) {
+      return Response.json(
+        { error: 'AI-tjänsten är tillfälligt otillgänglig. Försök igen om en stund.' },
+        { status: 503 }
+      )
+    }
+
     return Response.json({ error: 'Något gick fel. Försök igen.' }, { status: 500 })
+  }
+}
+
+async function processPostMessage(
+  admin: ReturnType<typeof createAdminClient>,
+  clinicId: string,
+  ownerMessage: string
+): Promise<void> {
+  // 1. Detect no-go zone FIRST (takes priority over corrections)
+  const noGo = detectNoGoZone(ownerMessage)
+  if (noGo) {
+    try {
+      await admin.from('ai_no_go_zones').insert({
+        clinic_id: clinicId,
+        topic: noGo.topic.toLowerCase().trim(),
+        topic_keywords: noGo.keywords,
+        reason: noGo.reason,
+        detected_via: noGo.explicit ? 'explicit' : 'inferred',
+        confidence: noGo.explicit ? 1.0 : 0.7,
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ''
+      if (!msg.includes('unique') && !msg.includes('duplicate')) {
+        console.error('Failed to insert no-go zone:', err)
+      }
+    }
+    return
+  }
+
+  // 2. Detect explicit correction (only if no no-go zone found)
+  const correction = detectExplicitCorrection(ownerMessage)
+  if (correction) {
+    try {
+      await admin.from('ai_corrections').insert({
+        clinic_id: clinicId,
+        correction_text: correction.text,
+        interpreted_rule: correction.rule,
+        forbidden_phrase: correction.forbiddenPhrase
+          ? correction.forbiddenPhrase.toLowerCase().trim()
+          : null,
+        preference_key: correction.mappedPreference,
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ''
+      if (!msg.includes('unique') && !msg.includes('duplicate')) {
+        console.error('Failed to insert correction:', err)
+      }
+    }
+  }
+
+  // 3. No-go zone confidence decay
+  const { data: activeZones } = await admin
+    .from('ai_no_go_zones')
+    .select('id, topic_keywords, confidence')
+    .eq('clinic_id', clinicId)
+    .eq('is_active', true)
+
+  if (activeZones) {
+    const lowerMsg = ownerMessage.toLowerCase()
+    for (const zone of activeZones) {
+      const keywords = (zone.topic_keywords as string[]).filter((kw) => kw.length >= 3)
+      if (keywords.length === 0) continue
+
+      const mentionsNoGoTopic = keywords.some((kw) => {
+        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const regex = new RegExp(`\\b${escaped}\\b`, 'i')
+        return regex.test(lowerMsg)
+      })
+
+      if (mentionsNoGoTopic) {
+        const newConfidence = Math.max(0.1, (zone.confidence as number) - 0.15)
+
+        if (newConfidence <= 0.3) {
+          await admin
+            .from('ai_no_go_zones')
+            .update({
+              confidence: newConfidence,
+              is_active: false,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', zone.id)
+        } else {
+          await admin
+            .from('ai_no_go_zones')
+            .update({ confidence: newConfidence, updated_at: new Date().toISOString() })
+            .eq('id', zone.id)
+        }
+      }
+    }
   }
 }
