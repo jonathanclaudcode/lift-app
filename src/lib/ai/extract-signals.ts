@@ -24,7 +24,7 @@ function wordBoundary(word: string): RegExp {
   return new RegExp(`(?<!\\p{L})${escaped}(?!\\p{L})`, 'iu')
 }
 
-function anyWord(words: string[]): RegExp {
+export function anyWord(words: string[]): RegExp {
   const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
   return new RegExp(`(?<!\\p{L})(?:${escaped})(?!\\p{L})`, 'iu')
 }

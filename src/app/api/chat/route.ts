@@ -13,6 +13,7 @@ import {
   TRAIT_DETECTORS,
   type CalibratedPreferences,
 } from '@/lib/ai/extract-signals'
+import { detectTask } from '@/lib/ai/detect-tasks'
 
 export const maxDuration = 30
 
@@ -183,6 +184,19 @@ export async function POST(request: Request) {
       console.error('Failed to fetch clinic knowledge:', knowledgeError)
     }
 
+    // Fetch pending tasks (due today/overdue + undated)
+    const stockholmToday = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
+    const { data: pendingTasks, error: tasksError } = await supabase
+      .from('ai_tasks')
+      .select('description, due_date')
+      .eq('clinic_id', clinicId)
+      .eq('status', 'pending')
+      .or(`due_date.is.null,due_date.lte.${stockholmToday}`)
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .limit(5)
+
+    if (tasksError) console.error('Failed to fetch tasks:', tasksError)
+
     // Build system prompt
     const systemPrompt = buildSystemPrompt({
       clinicName,
@@ -192,6 +206,7 @@ export async function POST(request: Request) {
       memories: (memories || []) as Array<{ content: string }>,
       clinicKnowledge: (clinicKnowledge || []) as Array<{ category: string; content: string }>,
       personalityBlock,
+      pendingTasks: (pendingTasks || []) as Array<{ description: string; due_date: string | null }>,
     })
 
     // Call Anthropic with retry logic
@@ -522,6 +537,33 @@ async function processPostMessage(
     p_clinic_id: clinicId,
   })
   if (incError) console.error('Message count increment failed:', incError)
+
+  // 8. Detect task/reminder requests
+  const task = detectTask(ownerMessage)
+  if (task) {
+    const descPrefix = task.description.slice(0, 40).toLowerCase()
+    const { data: existingTask, error: existingError } = await admin
+      .from('ai_tasks')
+      .select('id')
+      .eq('clinic_id', clinicId)
+      .eq('status', 'pending')
+      .ilike('description', `${descPrefix.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`)
+      .maybeSingle()
+
+    if (existingError) console.error('Task dedup check failed:', existingError)
+
+    if (!existingTask) {
+      const { error: taskError } = await admin.from('ai_tasks').insert({
+        clinic_id: clinicId,
+        description: task.description,
+        due_date: task.dueDate,
+        source_message: task.sourceMessage,
+        status: 'pending',
+      })
+
+      if (taskError) console.error('Failed to insert task:', taskError)
+    }
+  }
 }
 
 async function saveDetectedKnowledge(

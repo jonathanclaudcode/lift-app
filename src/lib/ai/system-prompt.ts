@@ -8,6 +8,7 @@ interface SystemPromptOptions {
   memories?: Array<{ content: string }>
   clinicKnowledge?: Array<{ category: string; content: string }>
   personalityBlock?: string
+  pendingTasks?: Array<{ description: string; due_date: string | null }>
 }
 
 const KNOWLEDGE_CATEGORY_LABELS: Record<string, string> = {
@@ -162,6 +163,22 @@ ${knowledgeLines.join('\n')}`)
     parts.push(`
 ## SAKER DU MINNS
 ${memoryLines}`)
+  }
+
+  // Pending tasks
+  const { pendingTasks } = options
+  if (pendingTasks && pendingTasks.length > 0) {
+    const taskLines = pendingTasks.map((t) => {
+      if (t.due_date) {
+        const d = new Date(t.due_date + 'T00:00:00')
+        const formatted = d.toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' })
+        return `• ${t.description} (${formatted})`
+      }
+      return `• ${t.description}`
+    })
+    parts.push(`
+PÅMINNELSER (väv in naturligt om det är relevant — nämn inte alla på en gång):
+${taskLines.join('\n')}`)
   }
 
   // Language rule
