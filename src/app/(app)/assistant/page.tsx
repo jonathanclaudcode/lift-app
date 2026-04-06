@@ -17,7 +17,6 @@ export default async function AssistantPage() {
   if (!clinicId) redirect('/login')
 
   // Ensure clinic_preferences row exists (admin — bypasses RLS for upsert)
-  // Ensure clinic_preferences row exists (admin — bypasses RLS for upsert)
   const admin = createAdminClient()
   await admin
     .from('clinic_preferences')

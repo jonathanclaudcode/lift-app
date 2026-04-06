@@ -5,18 +5,13 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   MessageCircle,
-  MessageSquare,
-  Calendar,
-  Users,
   Settings,
   LogOut,
 } from 'lucide-react'
 
+// TODO: Re-enable /chat, /calendar, /customers when pages are built
 const navItems = [
   { label: 'AI Assistent', href: '/assistant', icon: MessageCircle },
-  { label: 'Chatt', href: '/chat', icon: MessageSquare },
-  { label: 'Kalender', href: '/calendar', icon: Calendar },
-  { label: 'Kunder', href: '/customers', icon: Users },
   { label: 'Inställningar', href: '/settings', icon: Settings },
 ]
 

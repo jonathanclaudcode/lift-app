@@ -597,6 +597,41 @@ async function processPostMessage(
       if (taskError) console.error('Failed to insert task:', taskError)
     }
   }
+
+  // 9. Phase progression
+  // increment_interaction_count runs BEFORE after(), so count is already updated
+  const { data: prefs, error: prefsError } = await admin
+    .from('clinic_preferences')
+    .select('interaction_count, relationship_phase')
+    .eq('clinic_id', clinicId)
+    .maybeSingle()
+
+  if (prefsError) {
+    console.error('Failed to read clinic_preferences for phase update:', prefsError)
+  } else if (prefs) {
+    const count = prefs.interaction_count ?? 0
+    const currentPhase = prefs.relationship_phase ?? 'dating'
+
+    let targetPhase: 'dating' | 'building' | 'secure'
+    if (count >= 50) {
+      targetPhase = 'secure'
+    } else if (count >= 15) {
+      targetPhase = 'building'
+    } else {
+      targetPhase = 'dating'
+    }
+
+    if (targetPhase !== currentPhase) {
+      const { error: phaseUpdateError } = await admin
+        .from('clinic_preferences')
+        .update({ relationship_phase: targetPhase })
+        .eq('clinic_id', clinicId)
+
+      if (phaseUpdateError) {
+        console.error('Failed to update relationship_phase:', phaseUpdateError)
+      }
+    }
+  }
 }
 
 async function saveDetectedKnowledge(
