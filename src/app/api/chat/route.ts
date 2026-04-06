@@ -6,6 +6,13 @@ import { buildSystemPrompt } from '@/lib/ai/system-prompt'
 import { AI_MODEL } from '@/lib/ai/client'
 import { detectExplicitCorrection, detectNoGoZone } from '@/lib/ai/detect-corrections'
 import { detectKnowledgeUpdate, type DetectedKnowledge } from '@/lib/ai/detect-knowledge'
+import {
+  extractSignals,
+  calibrate,
+  buildPersonalityBlock,
+  TRAIT_DETECTORS,
+  type CalibratedPreferences,
+} from '@/lib/ai/extract-signals'
 
 export const maxDuration = 30
 
@@ -142,6 +149,28 @@ export async function POST(request: Request) {
       .order('source_date', { ascending: false })
       .limit(5)
 
+    // Fetch preference engine data
+    const { data: prefData, error: prefError } = await supabase
+      .from('preference_engine')
+      .select('*')
+      .eq('clinic_id', clinicId)
+      .maybeSingle()
+
+    if (prefError) console.error('Failed to fetch preferences:', prefError)
+
+    let personalityBlock: string | undefined
+    if (prefData) {
+      const calibrated: CalibratedPreferences = {
+        formality: calibrate(prefData.formality_alpha as number, prefData.formality_beta as number),
+        emoji_frequency: calibrate(prefData.emoji_frequency_alpha as number, prefData.emoji_frequency_beta as number),
+        verbosity: calibrate(prefData.verbosity_alpha as number, prefData.verbosity_beta as number),
+        humor_tolerance: calibrate(prefData.humor_tolerance_alpha as number, prefData.humor_tolerance_beta as number),
+        proactivity_tolerance: calibrate(prefData.proactivity_tolerance_alpha as number, prefData.proactivity_tolerance_beta as number),
+      }
+      const observedTraits = (prefData.observed_traits as string[]) ?? []
+      personalityBlock = buildPersonalityBlock(calibrated, observedTraits)
+    }
+
     // Fetch clinic knowledge
     const { data: clinicKnowledge, error: knowledgeError } = await supabase
       .from('clinic_knowledge')
@@ -162,6 +191,7 @@ export async function POST(request: Request) {
       noGoZones: (noGoZones || []) as Array<{ topic: string; topic_keywords: string[] }>,
       memories: (memories || []) as Array<{ content: string }>,
       clinicKnowledge: (clinicKnowledge || []) as Array<{ category: string; content: string }>,
+      personalityBlock,
     })
 
     // Call Anthropic with retry logic
@@ -400,6 +430,98 @@ async function processPostMessage(
   if (knowledge) {
     await saveDetectedKnowledge(admin, clinicId, knowledge)
   }
+
+  // 5. Extract preference signals and apply Bayesian updates
+  //    Get the PREVIOUS AI message (before this exchange), NOT the response to this message.
+  //    The owner message was saved BEFORE Claude was called, so index [1] is the previous one.
+  const { data: prevAiMsgs, error: prevAiError } = await admin
+    .from('ai_chat_messages')
+    .select('content')
+    .eq('clinic_id', clinicId)
+    .eq('role', 'assistant')
+    .order('created_at', { ascending: false })
+    .limit(2)
+
+  if (prevAiError) console.error('Failed to fetch previous AI message:', prevAiError)
+
+  const previousAiMessage = prevAiMsgs && prevAiMsgs.length >= 2 ? prevAiMsgs[1].content : ''
+
+  const signals = extractSignals(ownerMessage, previousAiMessage)
+
+  for (const signal of signals) {
+    const { data: result, error: rpcError } = await admin.rpc('update_preference_atomic', {
+      p_clinic_id: clinicId,
+      p_preference_key: signal.preference,
+      p_direction: signal.direction,
+      p_weight: signal.weight,
+    })
+
+    if (rpcError) {
+      console.error('Preference update failed:', rpcError)
+      continue
+    }
+
+    if (result) {
+      const rpcResult = result as { old_alpha: number; old_beta: number; new_alpha: number; new_beta: number }
+      const { error: signalError } = await admin.from('preference_signals').insert({
+        clinic_id: clinicId,
+        preference_key: signal.preference,
+        signal_type: signal.reason,
+        signal_direction: signal.direction,
+        signal_weight: signal.weight,
+        alpha_before: rpcResult.old_alpha,
+        beta_before: rpcResult.old_beta,
+        alpha_after: rpcResult.new_alpha,
+        beta_after: rpcResult.new_beta,
+      })
+      if (signalError) console.error('Signal log failed:', signalError)
+    }
+  }
+
+  // 6. Update trait observations
+  for (const detector of TRAIT_DETECTORS) {
+    if (!detector.pattern(ownerMessage)) continue
+
+    const { data: newCount, error: traitError } = await admin.rpc('upsert_trait_observation', {
+      p_clinic_id: clinicId,
+      p_trait_key: detector.traitKey,
+    })
+
+    if (traitError) {
+      console.error('Trait observation failed:', traitError)
+      continue
+    }
+
+    if (typeof newCount === 'number' && newCount >= detector.minOccurrences) {
+      const { data: traitRow } = await admin
+        .from('trait_observations')
+        .select('promoted')
+        .eq('clinic_id', clinicId)
+        .eq('trait_key', detector.traitKey)
+        .maybeSingle()
+
+      if (traitRow && !traitRow.promoted) {
+        const { error: promoteError } = await admin.rpc('promote_trait', {
+          p_clinic_id: clinicId,
+          p_trait_text: detector.traitText,
+        })
+        if (promoteError) console.error('Trait promotion failed:', promoteError)
+
+        const { error: markError } = await admin
+          .from('trait_observations')
+          .update({ promoted: true })
+          .eq('clinic_id', clinicId)
+          .eq('trait_key', detector.traitKey)
+        if (markError) console.error('Trait mark promoted failed:', markError)
+      }
+    }
+  }
+
+  // 7. Increment total messages (atomic RPC)
+  const { error: incError } = await admin.rpc('increment_preference_messages', {
+    p_clinic_id: clinicId,
+  })
+  if (incError) console.error('Message count increment failed:', incError)
 }
 
 async function saveDetectedKnowledge(

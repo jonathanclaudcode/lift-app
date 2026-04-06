@@ -1,3 +1,5 @@
+import { DEFAULT_PERSONALITY } from '@/lib/ai/extract-signals'
+
 interface SystemPromptOptions {
   clinicName: string
   ownerName: string | null
@@ -5,6 +7,7 @@ interface SystemPromptOptions {
   noGoZones?: Array<{ topic: string; topic_keywords: string[] }>
   memories?: Array<{ content: string }>
   clinicKnowledge?: Array<{ category: string; content: string }>
+  personalityBlock?: string
 }
 
 const KNOWLEDGE_CATEGORY_LABELS: Record<string, string> = {
@@ -60,6 +63,11 @@ En varm, trygg och kompetent assistent. Du är på ${addressee}s sida — alltid
 - Max 1 emoji per meddelande, och bara om ${addressee} använder emojis.
 - Aldrig filler: "Absolut!", "Självklart!", "Tack för att du delar det!"
 - Skriv i löptext, inte listor, om det inte verkligen behövs.`)
+
+  // Personality block (calibrated from owner behavior — addendum, not replacement)
+  if (options.personalityBlock && options.personalityBlock !== DEFAULT_PERSONALITY) {
+    parts.push(`\nDIN STIL (kalibrerad efter ägaren):\n${options.personalityBlock}`)
+  }
 
   // Corrections block
   if (corrections && corrections.length > 0) {

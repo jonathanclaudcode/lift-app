@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/daily-memories",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/daily-decay",
+      "schedule": "0 1 * * *"
     }
   ]
 }
