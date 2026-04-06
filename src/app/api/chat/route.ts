@@ -17,6 +17,38 @@ import { detectTask } from '@/lib/ai/detect-tasks'
 
 export const maxDuration = 30
 
+// Simple in-memory rate limiter (per clinic)
+// Best-effort throttle for a single warm serverless instance — not a distributed rate limiter
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_MAX = 30
+const RATE_LIMIT_WINDOW_MS = 60_000
+let rateLimitCheckCount = 0
+
+function checkRateLimit(clinicId: string): boolean {
+  const now = Date.now()
+
+  // Cleanup expired entries every 100 checks
+  if (++rateLimitCheckCount % 100 === 0) {
+    for (const [key, val] of rateLimitMap) {
+      if (now > val.resetAt) rateLimitMap.delete(key)
+    }
+  }
+
+  const entry = rateLimitMap.get(clinicId)
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(clinicId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    return true
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX) {
+    return false
+  }
+
+  entry.count++
+  return true
+}
+
 const CONVERSATION_GAP_MS = 60 * 60 * 1000 // 60 minutes
 
 const anthropic = new Anthropic()
@@ -58,6 +90,13 @@ export async function POST(request: Request) {
   const clinicId = user.app_metadata?.clinic_id as string | undefined
   if (!clinicId) {
     return Response.json({ error: 'Ingen klinik kopplad' }, { status: 400 })
+  }
+
+  if (!checkRateLimit(clinicId)) {
+    return Response.json(
+      { error: 'Du skickar meddelanden för snabbt. Vänta en stund.' },
+      { status: 429 }
+    )
   }
 
   try {
@@ -356,20 +395,17 @@ async function processPostMessage(
   // 1. Detect no-go zone FIRST (takes priority over corrections)
   const noGo = detectNoGoZone(ownerMessage)
   if (noGo) {
-    try {
-      await admin.from('ai_no_go_zones').insert({
-        clinic_id: clinicId,
-        topic: noGo.topic.toLowerCase().trim(),
-        topic_keywords: noGo.keywords,
-        reason: noGo.reason,
-        detected_via: noGo.explicit ? 'explicit' : 'inferred',
-        confidence: noGo.explicit ? 1.0 : 0.7,
-      })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : ''
-      if (!msg.includes('unique') && !msg.includes('duplicate')) {
-        console.error('Failed to insert no-go zone:', err)
-      }
+    const { error: noGoInsertError } = await admin.from('ai_no_go_zones').insert({
+      clinic_id: clinicId,
+      topic: noGo.topic.toLowerCase().trim(),
+      topic_keywords: noGo.keywords,
+      reason: noGo.reason,
+      detected_via: noGo.explicit ? 'explicit' : 'inferred',
+      confidence: noGo.explicit ? 1.0 : 0.7,
+    })
+
+    if (noGoInsertError && noGoInsertError?.code !== '23505') {
+      console.error('Failed to insert no-go zone:', noGoInsertError)
     }
     // NOTE: No early return — confidence decay and knowledge detection still run below
   }
@@ -378,21 +414,18 @@ async function processPostMessage(
   if (!noGo) {
     const correction = detectExplicitCorrection(ownerMessage)
     if (correction) {
-      try {
-        await admin.from('ai_corrections').insert({
-          clinic_id: clinicId,
-          correction_text: correction.text,
-          interpreted_rule: correction.rule,
-          forbidden_phrase: correction.forbiddenPhrase
-            ? correction.forbiddenPhrase.toLowerCase().trim()
-            : null,
-          preference_key: correction.mappedPreference,
-        })
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : ''
-        if (!msg.includes('unique') && !msg.includes('duplicate')) {
-          console.error('Failed to insert correction:', err)
-        }
+      const { error: corrInsertError } = await admin.from('ai_corrections').insert({
+        clinic_id: clinicId,
+        correction_text: correction.text,
+        interpreted_rule: correction.rule,
+        forbidden_phrase: correction.forbiddenPhrase
+          ? correction.forbiddenPhrase.toLowerCase().trim()
+          : null,
+        preference_key: correction.mappedPreference,
+      })
+
+      if (corrInsertError && corrInsertError?.code !== '23505') {
+        console.error('Failed to insert correction:', corrInsertError)
       }
     }
   }
