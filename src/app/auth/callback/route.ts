@@ -31,6 +31,15 @@ export async function GET(request: NextRequest) {
 
   // Returning user — already has a clinic
   if (user.app_metadata?.clinic_id) {
+    const { data: existingClinic } = await supabase
+      .from('clinics')
+      .select('onboarded_at')
+      .eq('id', user.app_metadata.clinic_id as string)
+      .single()
+
+    if (existingClinic && !existingClinic.onboarded_at) {
+      return NextResponse.redirect(new URL('/onboarding/welcome', request.url))
+    }
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
@@ -88,7 +97,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    return NextResponse.redirect(new URL('/onboarding/welcome', request.url))
   } catch {
     // Cleanup if clinic was partially created
     if (newClinicId) {
