@@ -30,6 +30,7 @@ export async function processAIMessage(options: {
 }): Promise<{
   response: string
   assistantMessageId: string
+  assistantMessageCreatedAt: string
   ownerMessageId: string
   conversationId: string
 }> {
@@ -272,6 +273,7 @@ export async function processAIMessage(options: {
   return {
     response: responseText,
     assistantMessageId: savedAssistantMsg.id,
+    assistantMessageCreatedAt: savedAssistantMsg.created_at,
     ownerMessageId: savedOwnerMsg.id,
     conversationId,
   }

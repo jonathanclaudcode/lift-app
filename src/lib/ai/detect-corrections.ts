@@ -118,3 +118,30 @@ export function detectNoGoZone(message: string): DetectedNoGo | null {
 
   return null
 }
+
+export function detectScrapeIntent(message: string): { url: string | null } | null {
+  const patterns = [
+    /s[ck]anna\s+min\s+(?:hemsida|sida|sajt|webbplats)/iu,
+    /uppdatera\s+från\s+(?:hemsidan|sajten|webben)/iu,
+    /(?<!\p{L})(?:kolla|hämta)\s+(?:min\s+)?(?:hemsida|sida|sajt)(?!\p{L})/iu,
+    /hämta\s+(?:data|info|information)\s+från/iu,
+  ]
+
+  const matched = patterns.some((p) => p.test(message))
+  if (!matched) return null
+
+  // Try to extract URL
+  const urlMatch = message.match(/https?:\/\/[^\s)>"]+/)
+  if (urlMatch) {
+    const cleaned = urlMatch[0].replace(/[.,!?]+$/, '')
+    return { url: cleaned }
+  }
+
+  // Try bare domain
+  const domainMatch = message.match(/(?<!\p{L})[\w-]+\.(?:se|com|nu|org|net)(?!\p{L})/u)
+  if (domainMatch) {
+    return { url: domainMatch[0].replace(/[.,!?]+$/, '') }
+  }
+
+  return { url: null }
+}

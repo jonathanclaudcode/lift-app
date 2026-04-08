@@ -92,7 +92,7 @@ export async function POST(request: Request) {
       id: result.assistantMessageId,
       role: 'assistant' as const,
       content: result.response,
-      created_at: new Date().toISOString(),
+      created_at: result.assistantMessageCreatedAt,
     })
 
     // Post-processing runs after response is sent to client
